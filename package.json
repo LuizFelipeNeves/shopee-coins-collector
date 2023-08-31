@@ -1,6 +1,8 @@
 {
   "scripts": {
-    "lint": "eslint ./**/*.ts --fix"
+    "lint": "eslint ./**/*.ts --fix",
+    "build": "tsc *.ts --lib dom,es2021 --skipLibCheck",
+    "start": "node collect.js"
   },
   "hooks": {
     "pre-commit": "npm run lint"

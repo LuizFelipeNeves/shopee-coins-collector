@@ -12,8 +12,9 @@ import { login, pwd, aesKey } from '../config';
 import { AES, enc } from 'crypto-ts';
 
 export class ShopeeCrawler extends BaseCrawler {
-  readonly homepage = 'https://shopee.tw/';
-  readonly loginpage = 'https://shopee.tw/buyer/login?from=https%3A%2F%2Fshopee.tw%2Fuser%2Fcoin&next=https%3A%2F%2Fshopee.tw%2Fshopee-coins';
+  readonly homepage = 'https://shopee.com.br/';
+  readonly loginpage = 'https://shopee.com.br/buyer/login?next=https%3A%2F%2Fshopee.com.br%2Fshopee-coins';
+  readonly coinUrl = 'https://shopee.com.br/shopee-coins';
   readonly pathCookie: any;
   usr: string;
   pwd: string;
@@ -127,8 +128,7 @@ export class ShopeeCrawler extends BaseCrawler {
     const curUrl = page.url();
     logger.debug('Currently at url: ' + curUrl);
 
-    const coinUrl = 'https://shopee.tw/shopee-coins';
-    if (curUrl === coinUrl) {
+    if (curUrl === this.coinUrl) {
       // If the user has logged in,
       // the webpage will redirect to the coin page
       logger.info('Already logged in.');
@@ -144,22 +144,21 @@ export class ShopeeCrawler extends BaseCrawler {
     await this.waitFor(page, pwdIpt);
     await page.type(loginIpt, this.usr);
     await page.type(pwdIpt, this.pwd);
-    await this.clickXPath(page, '//button[contains(text(), "登入")]');
+    await page.keyboard.press('Enter')
 
     // Wait for the login result.
     const outcomes = [
       ...txt.WRONG_PASSWORDS.map(e => page.waitForXPath(`//div[contains(text(), "${e}")]`)),
       page.waitForXPath(`//button[contains(text(), "${txt.PKAY_PUZZLE}")]`),
       page.waitForXPath(`//div[contains(text(), "${txt.USE_LINK}")]`),
-      page.waitForXPath(`//div[contains(text(), "${txt.REWARD}")]`),
-      page.waitForXPath(`//div[contains(text(), "${txt.TOO_MUCH_TRY}")]`),
+      page.waitForXPath(`//button[contains(text(), "${txt.RECEIVE_COIN}")]`),
+      // page.waitForXPath(`//div[contains(text(), "${txt.TOO_MUCH_TRY}")]`),
       page.waitForXPath(`//div[contains(text(), "${txt.EMAIL_AUTH}")]`)
     ];
     const result = await Promise.any(outcomes);
     const text = await page.evaluate(el => (el as HTMLElement).innerText, result);
-    logger.debug(text);
 
-    if (text === txt.REWARD) {
+    if (text.includes(txt.RECEIVE_COIN)) {
       // login succeeded
       logger.info('Login succeeded.');
       return;
@@ -191,15 +190,23 @@ export class ShopeeCrawler extends BaseCrawler {
 
   async loginWithSmsLink (page: Page): Promise<number | undefined> {
     await page.waitForXPath(`//div[contains(text(), "${txt.USE_LINK}")]`, { visible: true });
-    await this.clickXPath(page, `//button[contains(., "${txt.USE_LINK}")]`);
+    await this.clickXPath(page, `//button[contains(., "${txt.USE_LINK}")]`, false);
+
+    await page.waitForXPath(`//button[contains(text(), "${txt.CONFIRM_LINK}")]`, { visible: true });
+    await this.clickXPath(page, `//button[contains(., "${txt.CONFIRM_LINK}")]`, false);
 
     // Wait until the page is redirect.
     await page.waitForFunction("window.location.pathname === '/verify/link'");
 
     // Check if reaching daily limits.
     try {
-      const sentOnPhone = await page.waitForXPath(`//div[contains(text(), "${txt.ON_CELLPHONE}")]`, { visible: true });
-      if (!sentOnPhone) {
+      const outcomes = [
+        page.waitForXPath(`//button[contains(text(), "${txt.ON_CELLPHONE}")]`),
+        page.waitForXPath(`//div[contains(text(), "${txt.TOO_MUCH_TRY}")]`)
+      ];
+      const result = await Promise.any(outcomes);
+      const text = await page.evaluate(el => (el as HTMLElement).innerText, result);
+      if (text === txt.TOO_MUCH_TRY) {
         // Failed because reach limits.
         logger.error('Cannot use SMS link to login: reach daily limits.');
         return exitCode.TOO_MUCH_TRY;
